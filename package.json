@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "description": "CLI for Maestro Fraud Detection Platform — query accounts, signals, alerts, and chat with AI analyst",
   "type": "module",
+  "files": [
+    "bin/",
+    "skill/",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "maestro-fraud": "./bin/cli.js"
   },
