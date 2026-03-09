@@ -6,6 +6,12 @@ metadata:
     emoji: "🕵️"
     requires:
       anyBins: ["maestro-fraud"]
+    install:
+      - id: node
+        kind: node
+        package: maestro-fraud
+        bins: ["maestro-fraud"]
+        label: "Install maestro-fraud CLI (npm)"
 ---
 
 # Maestro Fraud Detection Skill

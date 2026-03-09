@@ -2,7 +2,7 @@
 
 CLI for the Maestro Fraud Detection Platform. Query accounts, signals, alerts, and chat with an AI fraud analyst — all from the terminal.
 
-Designed for both **human operators** and **AI agents** (via [ClawHub](https://clawhub.com) skill).
+Designed for both **human operators** and **AI agents** (via the included [skill](#ai-agent-skill)).
 
 ## Install
 
@@ -37,15 +37,15 @@ maestro-fraud alerts --severity critical --status unacknowledged
 maestro-fraud stats
 ```
 
-## AI Agent Integration
+## AI Agent Skill
 
-Install the ClawHub skill so AI agents can query your fraud platform:
+The `skill/` folder contains a SKILL.md that teaches AI agents when and how to use this CLI for fraud-related queries. Copy it into your agent's skills directory:
 
 ```bash
-clawhub install maestro-fraud
+cp -r skill/ /path/to/your/agent/skills/maestro-fraud/
 ```
 
-The skill teaches AI agents when and how to use this CLI for fraud-related queries.
+The skill enables any AI agent with shell access to query your fraud platform — no MCP server needed, minimal token cost.
 
 ## API
 
