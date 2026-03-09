@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Suppress Node 25 UV_HANDLE_CLOSING assertion on Windows
+process.on('exit', () => {});
+
 /**
  * Maestro Fraud CLI
  * 
