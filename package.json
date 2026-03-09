@@ -1,0 +1,18 @@
+{
+  "name": "maestro-fraud",
+  "version": "1.0.0",
+  "description": "CLI for Maestro Fraud Detection Platform — query accounts, signals, alerts, and chat with AI analyst",
+  "bin": {
+    "maestro-fraud": "./bin/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "echo 'No build needed'",
+    "test": "node bin/cli.js --help"
+  },
+  "keywords": ["fraud", "detection", "cli", "maestro", "ai"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
