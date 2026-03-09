@@ -1,22 +1,10 @@
 #!/usr/bin/env node
-// Suppress Node 25 UV_HANDLE_CLOSING assertion on Windows
-process.on('exit', () => {});
 
 /**
  * Maestro Fraud CLI
  * 
  * Query the Maestro Fraud Detection Platform from the command line.
  * Designed for both human operators and AI agents.
- * 
- * Setup:
- *   maestro-fraud login --url https://fraud.example.com --key fd_xxxxx
- * 
- * Usage:
- *   maestro-fraud chat "analyze account 12345"
- *   maestro-fraud search user@email.com
- *   maestro-fraud signals <account-id>
- *   maestro-fraud alerts [--status unacknowledged] [--severity critical]
- *   maestro-fraud stats
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
@@ -44,9 +32,10 @@ function saveConfig(config) {
 
 async function api(method, path, body = null) {
   const config = loadConfig();
-  if (!config) {
+  if (!config?.url || !config?.key) {
     console.error('Not logged in. Run: maestro-fraud login --url <URL> --key <API_KEY>');
-    process.exit(1);
+    process.exitCode = 1;
+    return null;
   }
 
   const url = `${config.url.replace(/\/$/, '')}${path}`;
@@ -58,15 +47,32 @@ async function api(method, path, body = null) {
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
 
-  const res = await fetch(url, opts);
-  const data = await res.json();
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (err) {
+    console.error(`Connection error: ${err.message}`);
+    console.error(`URL: ${url}`);
+    process.exitCode = 1;
+    return null;
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    console.error(`Invalid response from server (status ${res.status})`);
+    process.exitCode = 1;
+    return null;
+  }
 
   if (!data.success) {
-    console.error(`Error: ${data.error}`);
-    if (res.status === 429) {
-      console.error(`Rate limited. Retry after ${res.headers.get('Retry-After')}s`);
-    }
-    process.exit(1);
+    console.error(`Error: ${data.error || 'Unknown error'}`);
+    if (res.status === 401) console.error('Check your API key: maestro-fraud login --url <URL> --key <KEY>');
+    if (res.status === 403) console.error('API key does not have permission for this operation.');
+    if (res.status === 429) console.error(`Rate limited. Retry after ${res.headers.get('Retry-After') || '?'}s`);
+    process.exitCode = 1;
+    return null;
   }
 
   return data;
@@ -78,56 +84,65 @@ async function cmdLogin(args) {
   const urlIdx = args.indexOf('--url');
   const keyIdx = args.indexOf('--key');
   
-  if (urlIdx === -1 || keyIdx === -1) {
+  if (urlIdx === -1 || keyIdx === -1 || !args[urlIdx + 1] || !args[keyIdx + 1]) {
     console.error('Usage: maestro-fraud login --url <PLATFORM_URL> --key <API_KEY>');
     console.error('Example: maestro-fraud login --url https://fraud.cipiti.ai --key fd_AbCdEfGh...');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const url = args[urlIdx + 1];
   const key = args[keyIdx + 1];
 
-  if (!url || !key) {
-    console.error('Both --url and --key are required');
-    process.exit(1);
-  }
-
-  // Test connection
+  let res;
   try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/api/v1/stats`, {
+    res = await fetch(`${url.replace(/\/$/, '')}/api/v1/stats`, {
       headers: { 'X-API-Key': key },
     });
-    const data = await res.json();
-    if (!data.success) {
-      console.error(`Connection failed: ${data.error}`);
-      process.exit(1);
-    }
-    saveConfig({ url, key });
-    console.log(`✅ Connected to ${url}`);
-    console.log(`   Accounts: ${data.data.accounts.total}`);
-    console.log(`   High risk: ${data.data.accounts.highRisk}`);
-    console.log(`   Config saved to ${CONFIG_FILE}`);
   } catch (err) {
     console.error(`Connection failed: ${err.message}`);
-    process.exit(1);
+    console.error(`Could not reach ${url} — check the URL and your network.`);
+    process.exitCode = 1;
+    return;
   }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    console.error(`Invalid response from ${url} (status ${res.status}). Is this a Maestro Fraud platform?`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!data.success) {
+    console.error(`Authentication failed: ${data.error || 'Unknown error'}`);
+    if (res.status === 401) console.error('The API key is invalid or expired.');
+    process.exitCode = 1;
+    return;
+  }
+
+  saveConfig({ url, key });
+  console.log(`✅ Connected to ${url}`);
+  console.log(`   Accounts: ${data.data.accounts.total}`);
+  console.log(`   High risk: ${data.data.accounts.highRisk}`);
+  console.log(`   Config saved to ${CONFIG_FILE}`);
 }
 
 async function cmdChat(args) {
   const message = args.join(' ');
   if (!message) {
     console.error('Usage: maestro-fraud chat "your question"');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
-  // Load session from config
   const config = loadConfig();
-  const sessionId = config?.chatSessionId;
-
   const result = await api('POST', '/api/v1/chat', { 
     message,
-    sessionId: sessionId || undefined,
+    sessionId: config?.chatSessionId || undefined,
   });
+  if (!result) return;
 
   // Save session for continuity
   if (result.data.sessionId && config) {
@@ -146,10 +161,12 @@ async function cmdSearch(args) {
   const query = args.join(' ');
   if (!query) {
     console.error('Usage: maestro-fraud search <email|id|username>');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const result = await api('GET', `/api/v1/accounts/search?q=${encodeURIComponent(query)}`);
+  if (!result) return;
   
   if (result.data.length === 0) {
     console.log('No accounts found.');
@@ -170,11 +187,13 @@ async function cmdSignals(args) {
   const accountId = args[0];
   if (!accountId) {
     console.error('Usage: maestro-fraud signals <account-id>');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const limit = args.includes('--limit') ? args[args.indexOf('--limit') + 1] : '50';
-  const result = await api('GET', `/api/v1/accounts/${accountId}/signals?limit=${limit}`);
+  const result = await api('GET', `/api/v1/accounts/${encodeURIComponent(accountId)}/signals?limit=${limit}`);
+  if (!result) return;
 
   if (result.data.signals.length === 0) {
     console.log('No signals found for this account.');
@@ -192,18 +211,19 @@ async function cmdAlerts(args) {
   const params = new URLSearchParams();
   
   const statusIdx = args.indexOf('--status');
-  if (statusIdx !== -1) params.set('status', args[statusIdx + 1]);
+  if (statusIdx !== -1 && args[statusIdx + 1]) params.set('status', args[statusIdx + 1]);
   
   const sevIdx = args.indexOf('--severity');
-  if (sevIdx !== -1) params.set('severity', args[sevIdx + 1]);
+  if (sevIdx !== -1 && args[sevIdx + 1]) params.set('severity', args[sevIdx + 1]);
   
   const sinceIdx = args.indexOf('--since');
-  if (sinceIdx !== -1) params.set('since', args[sinceIdx + 1]);
+  if (sinceIdx !== -1 && args[sinceIdx + 1]) params.set('since', args[sinceIdx + 1]);
   
   const limitIdx = args.indexOf('--limit');
-  params.set('limit', limitIdx !== -1 ? args[limitIdx + 1] : '20');
+  params.set('limit', limitIdx !== -1 && args[limitIdx + 1] ? args[limitIdx + 1] : '20');
 
   const result = await api('GET', `/api/v1/alerts?${params.toString()}`);
+  if (!result) return;
 
   if (result.data.length === 0) {
     console.log('No alerts found.');
@@ -224,6 +244,7 @@ async function cmdAlerts(args) {
 
 async function cmdStats() {
   const result = await api('GET', '/api/v1/stats');
+  if (!result) return;
   const s = result.data;
 
   console.log('═══ Platform Overview ═══');
@@ -279,26 +300,28 @@ Examples:
   maestro-fraud alerts --severity critical --status unacknowledged
   maestro-fraud stats
 `);
-  process.exit(0);
+  process.exitCode = 0;
+} else {
+  const commands = {
+    login: cmdLogin,
+    chat: cmdChat,
+    'chat:new': cmdNewChat,
+    search: cmdSearch,
+    signals: cmdSignals,
+    alerts: cmdAlerts,
+    stats: cmdStats,
+  };
+
+  const handler = commands[command];
+  if (!handler) {
+    console.error(`Unknown command: ${command}. Run 'maestro-fraud --help' for usage.`);
+    process.exitCode = 1;
+  } else {
+    try {
+      await handler(cmdArgs);
+    } catch (err) {
+      console.error(`Error: ${err.message}`);
+      process.exitCode = 1;
+    }
+  }
 }
-
-const commands = {
-  login: cmdLogin,
-  chat: cmdChat,
-  'chat:new': cmdNewChat,
-  search: cmdSearch,
-  signals: cmdSignals,
-  alerts: cmdAlerts,
-  stats: cmdStats,
-};
-
-const handler = commands[command];
-if (!handler) {
-  console.error(`Unknown command: ${command}. Run 'maestro-fraud --help' for usage.`);
-  process.exit(1);
-}
-
-handler(cmdArgs).catch(err => {
-  console.error(`Error: ${err.message}`);
-  process.exit(1);
-});
