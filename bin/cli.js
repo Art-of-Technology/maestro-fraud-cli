@@ -267,6 +267,45 @@ async function cmdNewChat() {
   }
 }
 
+async function cmdConfig(args) {
+  const config = loadConfig() || {};
+  
+  if (args[0] === 'set' && args[1] && args[2]) {
+    config[args[1]] = args[2];
+    saveConfig(config);
+    console.log(`✅ ${args[1]} = ${args[2].slice(0, 6)}...`);
+    return;
+  }
+  
+  if (args[0] === 'get' && args[1]) {
+    const val = config[args[1]];
+    console.log(val ? `${args[1]} = ${String(val).slice(0, 6)}...` : `${args[1]} is not set`);
+    return;
+  }
+
+  if (args[0] === 'list') {
+    for (const [k, v] of Object.entries(config)) {
+      const display = ['key', 'cohereKey', 'openaiKey', 'geminiKey'].includes(k) 
+        ? `${String(v).slice(0, 6)}...` 
+        : v;
+      console.log(`  ${k} = ${display}`);
+    }
+    return;
+  }
+
+  console.log(`Usage:
+  maestro-fraud config set <key> <value>   Set a config value
+  maestro-fraud config get <key>           Get a config value  
+  maestro-fraud config list                List all config
+
+Keys: cohereKey, openaiKey, geminiKey, or any custom key
+
+Examples:
+  maestro-fraud config set cohereKey co_AbCdEfGh...
+  maestro-fraud config set geminiKey AIzaSy...
+  maestro-fraud config list`);
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -291,6 +330,9 @@ Commands:
     --since <ISO-date>             Only alerts after this date
     --limit <n>                    Max results (default 20)
   stats                            Platform overview statistics
+  config set <key> <value>         Set a config value (cohereKey, geminiKey, etc.)
+  config get <key>                 Get a config value
+  config list                      List all config values
 
 Examples:
   maestro-fraud login --url https://fraud.cipiti.ai --key fd_AbCdEfGh123
@@ -310,6 +352,7 @@ Examples:
     signals: cmdSignals,
     alerts: cmdAlerts,
     stats: cmdStats,
+    config: cmdConfig,
   };
 
   const handler = commands[command];
